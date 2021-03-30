@@ -12,14 +12,22 @@ This project is mainly for practice and getting to grips with drag and drop inte
 
 # Why `react-beautiful-dnd` ?
 
-### Simple API and clear documentation
+### Meets our use case and has clear documentation
+
+There were two main alternatives to consider when it came to deciding on which library to use for handling the drag and drop aspects, which were `react-draggable` and `react-dnd`.
+
+Starting with `react-draggable`, its sole purpose was focused on allowing components to be draggable. This only meets half of what we were looking to achieve with this as we would like to have some sort of 'droppable' zone for the draggable items to snap into e.g. dragging a formats block and dropping it into the timeline.
+
+Moving onto `react-dnd` it was a more full featured drag and drop library with features such as nesting, sorting and free drag. But I found the documentation to be lacking aside from the good amount of examples that were provided, but apart from that there wasn't many guides on how to build different types of projects using this library, which is something I find to be very useful. I figured this could be troublesome if we were wanting to build more complex features with the drag and drop and didn't have the sufficient documentation to support.
+
+`react-beautiful-dnd` offers pretty much all of the features `react-dnd` has as well as better performance and more in-depth documentation. Alongside that there is a more active community who provides plenty of guides and examples.
 
 ### Well optimized
 
 Time comparisons between earlier versions and their latest version 4:
 ![](/img/diagram-3.png)
 
-### Wide feature set
+As seen above the drastic decrease in delays when interacting with the drag and drop components is what allows us to have very snappy and responsive interactions.
 
 # Implementation
 
