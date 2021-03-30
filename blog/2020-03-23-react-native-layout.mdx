@@ -1,0 +1,111 @@
+---
+slug: react-native-layout
+title: Layout in React Native
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+Instead of CSS, React Native uses a layout engine called [Yoga](https://yogalayout.com) for styling and positioning UI elements.
+Although it resembles CSS, don't be fooled - nearly all of its features and syntax work at least slightly differently!
+
+:::question Why do we have another layout engine? Learning CSS was hard enough!
+
+Although CSS is a well-known standard that most developers are already familiar with, it was designed to target one platform only - the web.
+
+With React Native, our layouts need to translate to different platforms, which each have a layout engine of their own.
+We therefore need our layout engine to be highly general and translate easily to others.
+
+It's in this respect that CSS (which is highly elaborate and specialised) is not well suited, compared to a simpler one like Yoga.
+:::
+
+Don't feel too bad, though, as Yoga is in many ways much simpler than CSS.
+For one, it has fewer properties (~50, vs CSS's ~150), and encourages a much simpler approach to layouts.
+
+In this article, we'll cover some of the unintuitive differences I found between CSS and Yoga.
+
+## Flexbox
+
+Although this is not explicitly documented anywhere, I have discovered(?) that Yoga makes all 
+
+
+The value `1` can be any integer (`0`, `1`, `2`, `3`), but be careful what these mean:
+
+## Mystical `align-self` hack
+
+This tip makes no sense.
+
+It uses the `align-self` property, which is [ _supposed_ ](https://yogalayout.com/docs/align-items) to basically override the `align-items` setting of an element's flex-container, like this:
+
+```jsx
+ // "All children, go to the center of the cross Axis!" - Flex Container
+<View style={{flex: 1, alignItems: "center"}}>
+
+  {/* "Yes, sir!" - Flex item */}
+  <View>Obedient Flex item</View>
+
+  {/* "No, I don't think I will" - Flex item */}
+  <View style={{alignSelf: "flex-start"}}>Rebellious Flex item</View>
+</View>
+```
+
+However, I saw another strange use for this property in [ a StackOverflow post ](https://stackoverflow.com/a/65332769).
+Take this snippet as an example:
+
+```jsx
+  <View> {/* <-- NOT a flex container by default (or is it?) */}
+    <View style={{backgroundColor: "pink"}}> 
+      <Text>Hey!</Text>
+    </View>
+  </View>
+```
+
+This renders to something like this (on iOS):
+
+![](https://www.dropbox.com/s/2ve3146ixu67rjg/Screenshot%202021-03-24%20at%2009.14.29.png?dl=1)
+
+```jsx
+  <View> {/* <-- NOT a flex container by default (or is it?) */}
+    <View style={{backgroundColor: "pink", alignSelf: "center"}}> 
+      <Text>Hey!</Text>
+    </View>
+  </View>
+```
+
+![](https://www.dropbox.com/s/15ds3myeibgskgh/Screenshot%202021-03-24%20at%2009.13.44.png?dl=1)
+
+
+Enable anywhere
+
+You 
+
+## Styled Components
+
+Styled components supports React Native primitives with the same API as it uses for regular DOM elements.
+For example:
+
+```js
+const H2 = styled.Text`
+  font-size: 18px;
+  font-weight: 800;
+  font-family: "Open Sans";
+
+  margin-bottom: 20px;
+  flex: 2;
+`
+```
+
+This makes using Yoga even closer to regular CSS syntax.
+But watch out - there are some confusing caveats.
+
+### Units
+
+React Native uses unitless measurements, so you can normally omit units like this:
+
+```jsx
+<View style={{width: 250}}>
+```
+
+Due to the (lazy) implementation of the styled-components library
+
+[^1]: See discussion [ here ](https://github.com/styled-components/styled-components/issues/835), [ here ](https://github.com/styled-components/styled-components/issues/835)

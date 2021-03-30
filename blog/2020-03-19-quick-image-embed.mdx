@@ -1,0 +1,45 @@
+---
+slug: quick-dropbox-embed-image
+title: Tip - Quickly embed images from dropbox
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+Here's a quick tip for embedding images in markdown documents (like this one), using dropbox!
+
+:::note
+For this, you will need the Dropbox desktop client installed:
+
+    brew install dropbox
+:::
+
+Then, once Dropbox is opened (and you are logged in), open the preferences window...
+
+![](https://www.dropbox.com/s/pdftciup7769s3e/Screenshot%202021-03-19%20at%2009.56.25.png?dl=1)
+
+
+...and switch on "Share screenshots and screen recordings using Dropbox".
+
+![](https://www.dropbox.com/s/tvfan3qcxtazgox/Screenshot%202021-03-19%20at%2009.59.41.png?dl=1)
+
+Now, whenever you take a screenshot[^1] , Dropbox will not only host it for you, but will copy a link to the hosted image straight to your clipboard!
+
+Now you can simply paste directly into your markdown, as an image source:
+
+```md
+![](https://www.dropbox.com/s/tvfan3qcxtazgox/Screenshot%202021-03-19%20at%2009.59.41.png?dl=0)
+```
+
+...BUT make sure to change the `0` in `dl=0` (at the end) to `1`:
+
+```md
+![](https://www.dropbox.com/s/tvfan3qcxtazgox/Screenshot%202021-03-19%20at%2009.59.41.png?dl=1)
+```
+
+There! Now you have permanent links to your screenshots in a highly convenient two-step process!
+
+[Credit to my source ](https://cantonbecker.com/etcetera/2014/how-to-directly-link-or-embed-dropbox-images/ )
+
+
+[^1]: E.g. By using `⌘-⇧-4` on a Mac, provided it's set to "Save to desktop"

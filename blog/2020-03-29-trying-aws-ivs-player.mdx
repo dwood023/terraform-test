@@ -1,0 +1,19 @@
+---
+slug: trying-aws-ivs-player
+title: Trying AWS IVS Player
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+IVS is a AWS service that provides a fully managed cloud infrastructure for streaming video.
+This includes various components: 
+
+- An ingest server (receives [RTMP](https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf) connections e.g. from some broadcasting software such as OBS)
+- A transcoder (converts the payload of ingested RTMP packets into the format in which they will be consumed e.g. HLS)
+
+![](https://www.dropbox.com/s/p096hl318v35lv4/Screenshot%202021-03-29%20at%2015.57.18.png?dl=1)
+
+## Trying
+
+    yarn add amazon-ivs-player

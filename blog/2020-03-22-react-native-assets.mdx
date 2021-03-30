@@ -1,0 +1,179 @@
+---
+slug: react-native-assets
+title: Adding fonts (and other assets) to React Native Project 
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+For a web developer, adding fonts to a React Native project can be a puzzling task.
+We'd usually reach for CSS rules like `@font-face` and `@import`, but with React Native these are off the table.
+To make matters worse, we have multiple target platforms to consider - so won't there be different steps for each? 😨
+
+The answer is yes, but the React Native CLI can help with this.
+All we need is to:
+
+1. Configure the React Native CLI with an `assets` directory, and
+2. Run `react-native link` whenever 
+
+## 1. Configure the CLI with an `assets` directory
+
+The React Native CLI can be configured by adding a `react-native.config.js` file to your root directory.[^1]
+To add fonts to our project, we need to add an `assets` entry to its exports:
+
+```js
+module.exports = {
+	assets: [
+		"./assets" // NOTE: Use whatever directory you like
+	],
+}
+```
+
+Now we can add fonts to the directory specified above.
+For example, I might add some fonts to mine like so:
+
+![](https://www.dropbox.com/s/vuy5mmztsxie4id/Screenshot%202021-03-22%20at%2018.50.34.png?dl=1)
+ 
+Now, how do we make these fonts available on our target platforms?
+
+## 2. Run `react-native link`
+
+Besides installing native dependencies, the React Native CLI's `link` command can also "link" the contents of our newly configured asset directory, to each of our native target platforms.[^2]
+Simply run:
+
+	yarn react-native link
+
+Which outputs:
+
+	node_modules/.bin/react-native link
+	info Linking assets to ios project
+	warn Group 'Resources' does not exist in your Xcode project. We have created it automatically for you.
+	info Linking assets to android project
+	success Assets have been successfully linked to your project
+	✨  Done in 0.69s.
+
+Success!
+Or at least, according to the CLI...
+
+## Using our fonts 
+
+Lets test by using our custom font in a component:
+
+:::note
+I am using styled-components here, but a similar syntax should work with inline styles.
+:::
+
+```js
+const CustomFontText = styled.Text`
+  font-family: "Lato";
+`
+```
+
+Now when we use this component in a simulator, it should have our custom font applied!
+Viola!
+![](https://www.dropbox.com/s/t1mpoka4l46bspm/Screenshot%202021-03-22%20at%2021.08.02.png?dl=1)
+
+## (Optional) Inspecting the changes
+
+Now we know our fonts are working, let's take a look at _how_ they're working.
+What did that `react-native link` command do?
+
+	git status --short
+
+Which outputs:
+
+	M ios/ReactNativeDemo.xcodeproj/project.pbxproj
+	M ios/ReactNativeDemo/Info.plist
+	?? android/app/src/main/assets/
+	?? assets/
+
+Interesting...
+As expected, it updated both our Android and iOS projects in some way.
+Let's investigate further:
+
+### Changes to iOS project
+
+#### Changed file #1. Info.plist
+
+Let's take a look:
+ 
+	git diff ios/ReactNativeDemo/Info.plist
+ 
+```xml
+        <key>UIViewControllerBasedStatusBarAppearance</key>
+        <false/>
++       <key>UIAppFonts</key>
++       <array>
++               <string>Lato-Black.ttf</string>
++               <string>Lato-BlackItalic.ttf</string>
++               <string>Lato-Bold.ttf</string>
++               <string>Lato-BoldItalic.ttf</string>
++               <string>Lato-Italic.ttf</string>
++               <string>Lato-Light.ttf</string>
++               <string>Lato-LightItalic.ttf</string>
++               <string>Lato-Regular.ttf</string>
++               <string>Lato-Thin.ttf</string>
++               <string>Lato-ThinItalic.ttf</string>
++       </array>
+ </dict>
+ </plist>
+```
+
+Ok, that makes sense.
+Info.plist is some kind of metadata for the project, with a property `UIAppFonts` which now lists my new fonts!
+
+:::todo
+Learn more about this `Info.plist` file...
+:::
+
+#### Changed file #2. project.pbxproj
+
+This file had a large number of changes, so I'll skip over most of them.
+To give some idea of the changes, here's one addition that may be relatively meaningful:
+
+	git diff ios/ReactNativeDemo.xcodeproj/project.pbxproj
+
+Perhaps the easiest part to make sense of are entries added to a section called `PBXFileReference`.
+Here is an example:
+
+	+               C8E4E1C65AAD4C5297C9E07F /* Lato-Black.ttf */ = {isa = PBXFileReference; name = "Lato-Black.ttf"; path = "../assets/L
+	ato/Lato-Black.ttf"; sourceTree = "<group>"; fileEncoding = undefined; lastKnownFileType = unknown; explicitFileType = undefined; inc
+	ludeInIndex = 0; };
+
+This corresponds to one of our newly added font files!
+Notably, this entry even references the path of our top-level `assets` folder - so for iOS at least, there is no redundant copying of assets!
+
+### Changes to Android project
+
+For Android, it seems the only changes made by linking assets is the copying of our whole assets folder to `android/app/src/main`.
+
+	tree android/app/src/main/assets/
+
+```
+	android/app/src/main/assets/
+	└── fonts
+			├── Lato-Black.ttf
+			├── Lato-BlackItalic.ttf
+			├── Lato-Bold.ttf
+			├── Lato-BoldItalic.ttf
+			├── Lato-Italic.ttf
+			├── Lato-Light.ttf
+			├── Lato-LightItalic.ttf
+			├── Lato-Regular.ttf
+			├── Lato-Thin.ttf
+			└── Lato-ThinItalic.ttf
+```
+
+Presumably, Android projects require none of the configuration that iOS projects do for adding static assets.
+Instead, they seem to simply expect that these assets will always be under this predictable, standard path.
+Neat!
+
+## Lessons learned
+
+Clearly, Android and iOS projects refer to assets differently:
+Android requires assets to be copied to a standard location, whereas iOS projects can reference assets from anywhere.
+
+This is just one of the ways cross-platform native development can be confusing - we'll look out for others in future articles.
+
+[^1]: As described [in the docs](https://github.com/react-native-community/cli/blob/641b21f583c97e3d48ce87d5fe804f42db92fa5c/docs/configuration.md), corresponding to the source code [here](https://github.com/react-native-community/cli/blob/641b21f583c97e3d48ce87d5fe804f42db92fa5c/packages/cli/src/tools/config/readConfigFromDisk.ts#L12).
+[^2]: See source code [here](https://github.com/react-native-community/cli/blob/641b21f583c97e3d48ce87d5fe804f42db92fa5c/packages/cli/src/commands/link/link.ts#L79)

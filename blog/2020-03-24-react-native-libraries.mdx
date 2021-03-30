@@ -1,0 +1,37 @@
+---
+slug: react-native-libraries
+title: Using libraries in a React Native project
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+import Link from "@docusaurus/Link"
+
+To use SVGs in my project, I want to install a library called [`react-native-svg`](https://github.com/react-native-svg/react-native-svg).
+
+But with React Native, how will this be possible?
+Won't there be complications if the libraries include native code?
+
+Well, yes - but <Link to="/blog/react-native-assets">as we found with the challenge of linking assets</Link>, the React Native CLI has tools to help us.
+In fact, recent releases of the CLI do a lot of this work completely automatically (through a process they call [autolinking](https://github.com/react-native-community/cli/blob/master/docs/autolinking.md#autolinking).
+
+All we need to do is install the package in question:
+
+	yarn add react-native-svg
+
+And then one more step (just for iOS):
+	
+	cd ios && pod install && cd ..
+
+And that's it!
+
+Why did we have to do that?
+I don't know!
+
+Why didn't we need to do anything from Android?
+No idea!
+
+:::todo
+Find out more about how this works
+:::

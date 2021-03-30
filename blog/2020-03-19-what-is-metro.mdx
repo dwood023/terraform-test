@@ -1,0 +1,106 @@
+---
+slug: what-is-metro
+title: What is Metro?
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+import Link from "@docusaurus/Link"
+
+Metro is a Javascript bundler that was included with the React Native template we started with in a <Link to="/blog/trying-react-native-1">previous post</Link>.
+
+Metro is referred to as being specifically "for" React Native:
+
+![](https://www.dropbox.com/s/1k4ulps9228ssic/Screenshot%202021-03-19%20at%2009.32.56.png?dl=1)
+
+But what does this actually mean?
+How is Metro different to the myriad other JS bundlers?
+
+:::question How is Metro "for" React Native?
+Based on [this issue](https://github.com/facebook/metro/issues/403) on Metro's Github page, it sounds like this is only half-true to begin with.
+The "React Native" configuration of Metro is not actually inherent to Metro, but is instead provided by the React Native CLI (see [here](https://github.com/react-native-community/cli/blob/760708fc3216aee565f59877a103a7e35df2d77d/packages/cli/src/tools/loadMetroConfig.ts)).
+:::
+
+:::question Why was Metro created?
+According to [this post](https://www.reddit.com/r/reactnative/comments/fk6h98/why_was_it_necessary_to_create_the_metro_bundler/) on Reddit, the reason may be more historical/cultural than technical.
+When RN was first developed, Facebook wrote their own bundler for it (for whatever reason) and it's just never gone away - despite Webpack and others emerging as more flexible alternatives.[^1]
+:::
+
+## Inspecting Metro's output
+
+Let's bundle our template using the React Native CLI...
+
+    npx react-native bundle  --entry-file index.js --bundle-output bundle.js
+
+...and see what a sample of the output looks like:
+
+    $ head bundle.js
+    var __BUNDLE_START_TIME__=this.nativePerformanceNow?nativePerformanceNow():Date.now(),__DEV__=true,process=this.process||{},__METRO_GLOBAL_PREFIX__='';process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"development";
+    (function (global) {
+    "use strict";
+
+    global.__r = metroRequire;
+    global[__METRO_GLOBAL_PREFIX__ + "__d"] = define;
+    global.__c = clear;
+    global.__registerSegment = registerSegment;
+    var modules = clear();
+    var EMPTY = {};
+
+Oh yeah, it's not going to be very readable.
+
+## Comparing to Parcel's output
+
+I guess we could at least compare the output to Parcel's for the same project...
+
+```
+$ npx parcel build index.js
+
+  🚨  /Users/dav/Codices/Moar/Prototypes/ReactNativeDemo/node_modules/react-native/index.js:14:7: Unexpected token, expected "{" (14:7)
+  12 |
+  13 | // Components
+> 14 | import typeof AccessibilityInfo from './Libraries/Components/AccessibilityInfo/AccessibilityInfo';
+    |       ^
+  15 | import typeof ActivityIndicator from './Libraries/Components/ActivityIndicator/ActivityIndicator';
+  16 | import typeof Button from './Libraries/Components/Button';
+```
+
+Uhh... Ok.
+Bad luck for us, Parcel is having trouble with these Flow-related import statements.
+
+Actually, Parcel avoids applying transforms (e.g. for Flow annotations) to third-party modules _by-design_.[^2]
+It does this under the assumption that node modules are typically shipped with all non-standard features removed (i.e. already transformed into standard JS).
+This sounds reasonable, but for our `react-native` dependency, it's violated!
+
+How can this be?!
+Why does React Native ship with this Flow stuff left in?
+Am I missing something here?
+
+:::question Why does React Native ship with Flow annotations left in the source code?
+
+According to [this discussion](https://github.com/facebook/react-native/issues/10966), leaving those Flow annotations in the published NPM package *is* non-standard practice, but the React Native project does it anyway. 😒
+
+:::
+:::question Ok, so how does Metro or the React Native CLI remove them?
+
+I'm not sure... 
+I suppose Metro might be designed to expect this unusual situation - when we run it via the React Native CLI (using the `bundle` or `start` command) perhaps it knows to transpile some of its dependency modules too?
+
+As for how it does this - the babel config it uses to do so is [ this one ](https://github.com/facebook/metro/blob/master/packages/metro-react-native-babel-preset/src/configs/main.js#L172), which does indeed have a plugin for stripping Flow types (as we saw was necessary in our original Parcel error).
+However, this config does not seem to specify that it should apply to `node_modules`...
+
+Hmm....
+:::
+
+Unfortunately, at the time of writing I have been unable to answer this final question, so my progress (on figuring out why Metro is used) has halted.
+
+At this point, all I can say is that the React Native project appears to have been designed specifically for use with Metro as a bundler, and unless a full account of how the two projects are coupled is made, it is unknown how or how difficult it would be to use an alternative bundler.
+
+:::todo
+Solve this mystery to come up with a more comprehensive answer
+:::
+
+
+
+[^1]: By which I mean they are far more widely used/understood, as well as more configurable/having more plugins, etc.
+[^2]: See discussion [ here ](https://github.com/parcel-bundler/parcel/issues/13#issuecomment-349704833).
