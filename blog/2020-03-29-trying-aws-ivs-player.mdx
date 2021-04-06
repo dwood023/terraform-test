@@ -11,9 +11,254 @@ This includes various components:
 
 - An ingest server (receives [RTMP](https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf) connections e.g. from some broadcasting software such as OBS)
 - A transcoder (converts the payload of ingested RTMP packets into the format in which they will be consumed e.g. HLS)
+- A CDN (distributes the  media to users around the world)
 
 ![](https://www.dropbox.com/s/p096hl318v35lv4/Screenshot%202021-03-29%20at%2015.57.18.png?dl=1)
 
-## Trying
+##
 
-    yarn add amazon-ivs-player
+## Trying out the player
+
+For the following steps, we will basically follow [this AWS doc: "SDK for web guide"](https://docs.aws.amazon.com/ivs/latest/userguide/player-web.html).
+
+### Including the IVS Player SDK
+
+Starting with a basic web app project, we'll include the IVS Player script somewhere in our app or HTML document:
+
+```html
+<script src="https://player.live-video.net/1.2.0/amazon-ivs-player.min.js"></script>
+```
+
+:::question Why not install the player locally as an NPM module?
+We could do (see "Setup With NPM" in ), but there are some fiddly set up steps with that approach (to do with [ linking the player's wasm worker and binary ](https://github.com/aws-samples/amazon-ivs-player-web-sample/blob/master/samples/npm-sdk/npm-sdk.ts#L20)).
+These are not prohibitive, but it's simpler to proceed with the external script for this basic demo.
+:::
+
+Now before we try to use the player, we can check the script loaded successfully by logging a new global `IVSPlayer` variable (which the script should have defined for us):
+
+```ts
+// should log "true" for the following steps to work
+console.log(IVSPlayer.isPlayerSupported)
+```
+
+Assuming that logged `true`, we can proceed to load a stream:
+
+```ts
+const player = IVSPlayer.create()
+player.load(PLAYBACK_URL)
+player.play()
+```
+
+But wait, what's `PLAYBACK_URL`?
+We haven't defined anything like that yet! 😦
+
+It seems we've reached the limit of what we can implement without setting up any infrastructure.
+
+To find out what a playback URL is (as well as how to get one) we need to turn our sights to the backend for a while.
+In doing this, we need to look at a new IVS concept - channels.
+
+## Creating a channel
+
+In IVS, a playback URL is a property of a **channel**, so we will need to create one for our demo.
+
+:::question In the context of IVS, what's a "channel"?
+IVS provisions streaming infrastructure on the basis of units it calls **channels**.
+Each channel has a stream key and endpoint for ingesting data (from the streamer) and another for playback (by the viewer).
+
+In effect, a channel represents a unique source of streamed video, such as a single broadcaster (or broadcasting group) that viewers can tune into.
+:::
+
+Various methods are available for doing this, and since we are getting familiar with IVS we will take the time to try a few.
+
+### Method 1: Management Console
+
+There.
+Click that big orange button.
+
+![](https://www.dropbox.com/s/l8q01p90j795nnf/Screenshot%202021-03-31%20at%2010.11.10.png?dl=1)
+
+Skipping over the config step, we get our playback URL:
+
+![](https://www.dropbox.com/s/k10y2ysjs15lbys/Screenshot%202021-03-31%20at%2009.01.49.png?dl=1)
+
+This method is for cowards.
+Besides, we are too l33t for that, so let's keep going.
+
+### Method 2: AWS CLI
+
+The [ `ivs` subcommand ](https://docs.aws.amazon.com/cli/latest/reference/ivs/index.html#cli-aws-ivs) of the AWS CLI allows the creation of new channels with the following syntax (documented [here](https://docs.aws.amazon.com/cli/latest/reference/ivs/index.html#cli-aws-ivs)):
+
+```bash
+aws ivs create-channel
+  [--name <value>]
+  [--latency-mode <value>]
+  [--type <value>]
+  [--authorized | --no-authorized]
+  [--tags <value>]
+  [--cli-input-json <value>]
+  [--generate-cli-skeleton <value>]
+```
+For a full description of these options, see  .
+
+:::note
+As always, you will need to [ configure your AWS CLI ](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html) to use your preferred credentials.
+
+To do this, either pass an existing profile using the `--profile` option or add a default for all subsequent commands by running `aws configure`.
+:::
+
+You can even run it without options (in which case defaults are used):
+
+    aws ivs create-channel
+
+This produces the following output, describing your new channel:
+
+```json
+{
+    "channel": {
+        "arn": "arn:aws:ivs:eu-west-1:758924794885:channel/cAJKJJmhBzlC",
+        "name": "",
+        "latencyMode": "LOW",
+        "type": "STANDARD",
+        "ingestEndpoint": "24e48b867b6f.global-contribute.live-video.net",
+        "playbackUrl": "https://24e48b867b6f.eu-west-1.playback.live-video.net/api/video/v1/eu-west-1.758924794885.channel.cAJKJJmhBzlC.m3u8",
+        "authorized": false,
+        "tags": {}
+    },
+    "streamKey": {
+        "arn": "arn:aws:ivs:eu-west-1:758924794885:stream-key/njDi22M1LbAQ",
+        "value": "sk_eu-west-1_njDi22M1LbAQ_VQBkbdOI8nK7w9r3yzJHGkHHRsUsNM",
+        "channelArn": "arn:aws:ivs:eu-west-1:758924794885:channel/cAJKJJmhBzlC",
+        "tags": {}
+    }
+}
+```
+
+Among other details listed, there is our Playback URL (`playbackUrl`).
+
+```json
+"playbackUrl": "https://24e48b867b6f.eu-west-1.playback.live-video.net/api/video/v1/eu-west-1.758924794885.channel.cAJKJJmhBzlC.m3u8",
+```
+
+### Method 3: CloudFormation
+
+[Cloudformation](https://aws.amazon.com/cloudformation/) is an "Infrastructure-as-Code" system, similar to [Terraform](https://www.terraform.io/) but developed exlusively for (and by) AWS. 
+
+Instead of using the AWS CLI or management console to configure our infrastructure, CloudFormation allows us to specify a ["stack"](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacks.html) of services via a plaintext ["template"](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/template-guide.html) file (either [JSON or YAML](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/template-anatomy.html)) that can be checked into source control and used to automatically provision the specified services.
+
+The structure of a Cloudformation template consists (mainly) of a few basic elements:
+
+1. [ Resources ](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resources-section-structure.html) (representing services to provision)
+2. [ Parameters ](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html) (that enable resources to be configured at runtime)
+3. [ Rules ](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/rules-section-structure.html) (that enable validation of parameters)
+
+More advanced features are available, but these are largely for composing and parameterising templates further, see [here](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/template-anatomy.html) for details.
+
+For now, we will stick to the basics: how can we specify a resource that provisions an IVS channel?
+
+Within the [full list of services covered by Cloudformation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html), the types pertaining to IVS are listed [here](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/AWS_IVS.html).
+In total, there are only 3:
+
+- AWS::IVS::Channel
+- AWS::IVS::PlaybackKeyPair
+- AWS::IVS::StreamKey
+
+Although we will probably need to create a stream key too, let's focus just on the channel.
+A minimal CloudFormation template (YAML) for this would resemble the following:
+
+```yaml
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: This stack is just for testing IVS!
+
+Resources:
+  TestChannel: 
+    Type: AWS::IVS::Channel
+    Properties:
+      Name: "TestChannel"
+```
+Now we can deploy a new stack based on this template using the AWS CLI:
+
+    aws cloudformation deploy --template-file ivs.yaml --stack-name "TestStack"
+
+Which outputs:
+
+    Waiting for changeset to be created..
+    Waiting for stack create/update to complete
+    Successfully created/updated stack - TestStack
+
+That sounded hopeful, but let's confirm what that `deploy` command did.
+
+First, did it really create a stack in CloudFormation?
+We can find out with the CLI:
+
+    aws cloudformation list-stacks
+
+Which outputs:
+
+```json
+{
+    "StackSummaries": [
+      {
+          "StackId": "arn:aws:cloudformation:eu-west-1:758924794885:stack/deleteme/09f39b10-92c3-11eb-8a0a-06cc4292e70d",
+          "StackName": "TestStack",
+          "TemplateDescription": "This stack is just for testing IVS!",
+          "CreationTime": "2021-04-01T08:19:54.929000+00:00",
+          "LastUpdatedTime": "2021-04-01T08:20:00.250000+00:00",
+          "StackStatus": "CREATE_COMPLETE",
+          "DriftInformation": {
+              "StackDriftStatus": "NOT_CHECKED"
+          }
+      },
+    ]
+}
+```
+
+Cool, so CloudFormation did indeed create a stack - corresponding in some way to the template we deployed.
+
+Does it have our channel resource though?
+Let's check:
+
+    aws cloudformation list-stack-resources --stack-name TestStack
+
+```json
+{
+    "StackResourceSummaries": [
+        {
+            "LogicalResourceId": "TestChannel",
+            "PhysicalResourceId": "arn:aws:ivs:eu-west-1:758924794885:channel/ppBHd9pTqrh5",
+            "ResourceType": "AWS::IVS::Channel",
+            "LastUpdatedTimestamp": "2021-04-01T08:20:10.276000+00:00",
+            "ResourceStatus": "CREATE_COMPLETE",
+            "DriftInformation": {
+                "StackResourceDriftStatus": "NOT_CHECKED"
+            }
+        }
+    ]
+}
+```
+
+Good!
+So CloudFormation created a stack called `TestStack` **and** created its resources (a single IVS channel, in this case).
+
+Finally, let's check the creation of this IVS channel is represented by IVS itself.
+Conveniently, the `list-stack-resources` command we ran above gave us the ARN of our alleged channel (under the field `PhysicalResourceId`), so we can ask IVS about it directly:
+
+    aws ivs get-channel --arn arn:aws:ivs:eu-west-1:758924794885:channel/ppBHd9pTqrh5
+
+```json
+{
+    "channel": {
+        "arn": "arn:aws:ivs:eu-west-1:758924794885:channel/ppBHd9pTqrh5",
+        "name": "TestChannel",
+        "latencyMode": "LOW",
+        "type": "BASIC",
+        "ingestEndpoint": "24e48b867b6f.global-contribute.live-video.net",
+        "playbackUrl": "https://24e48b867b6f.eu-west-1.playback.live-video.net/api/video/v1/eu-west-1.758924794885.channel.ppBHd9pTqrh5.m3u8",
+        "authorized": false,
+        "tags": {}
+    }
+}
+```
+
+Fantastic - everything we asked for was created, and all the relevant services say so!
+Not only that, the above command gave us our Playback URL - victory!
