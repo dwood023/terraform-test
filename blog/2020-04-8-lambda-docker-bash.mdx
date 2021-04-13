@@ -1,0 +1,117 @@
+---
+slug: lambda-docker
+title: AWS Lambda with docker
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+As of [December 2020](https://aws.amazon.com/blogs/aws/new-for-aws-lambda-container-image-support/), AWS Lambda supports [packaging](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-package.html) your function code and its runtime environment together, in the form of a Docker image.
+
+## Why deploy Lambdas as images?
+
+Packaging your lambda as a Docker image comes with some unique advantages:
+
+### Benefit #1: Control over execution
+Image deployments allow greater control over the environment in which your function code executes, as Docker images can specify an entire file structure.
+This goes beyond what was previously possible using [layers](https://docs.aws.amazon.com/lambda/latest/dg/configuration-layers.html) or a [custom runtime](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-custom.html), as these options allowed only particular aspects of a Lambda's [execution environment](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-context.html) to be customised.[^1]
+
+### Benefit #2: Accessibility to developers
+Docker makes some AWS-specific concepts redundant, such as layers.[^2]
+This makes Lambdas simpler to think about and manage - everything is in the image!
+
+Of course, for those already familiar and comfortable with layers and other AWS Lambda features, this may be less of a benefit.
+
+:::question Why is "Benefit #3: locally replicable deployments" not on this list?
+Good question - one of the general benefits of Docker is that it allows local development to occur in an identical environment to the one used in production.
+However, this advantage does not apply exclusively to Docker-based Lambdas, due to the availability of [official preset images](https://hub.docker.com/r/lambci/lambda/) that can also be run locally.
+:::
+
+## Example use case: Lambda using the AWS CLI
+
+We wanted a Lambda to create IVS Channels, so we made an image from this Dockerfile:
+
+```dockerfile
+FROM amazon/aws-cli
+
+RUN mkdir /var/task
+WORKDIR /var/task
+COPY bootstrap .
+COPY create-channel.sh .
+
+ENTRYPOINT ["./bootstrap"]
+```
+
+This doesn't do much - most of the power of Docker here comes from starting with a convenient base image.
+Luckily, AWS provides a docker image with the AWS CLI pre-installed.
+With this, all that was left to add to our image was our handler script (`create-channel.sh`) and our custom runtime (`bootstrap`).
+
+:::question Is docker necessary for this case?
+In retrospect, possibly not.
+We found installing the AWS CLI in the preset environments difficult, so we switched to a custom image mostly just to debug this process.
+😅
+:::
+
+:::note 
+For details on how this custom runtime and handler work, check out [this post](/blog/lambda-bash-runtime).
+:::
+
+### Uploading to ECR
+
+To create a Lambda using a custom Docker image, the image must be hosted on ECR - AWS's docker repository service.
+
+To do this, we can create a new ECR repository using the AWS CLI:
+
+    aws ecr create-repository --repository-name example-repository
+  
+Which outputs:
+
+    {
+      "repository": {
+          "repositoryArn": "arn:aws:ecr:eu-west-1:758924794885:repository/example-repository",
+          "registryId": "758924794885",
+          "repositoryName": "example-repository",
+          "repositoryUri": "758924794885.dkr.ecr.eu-west-1.amazonaws.com/example-repository",
+          "createdAt": "2021-04-12T21:35:12+01:00",
+          "imageTagMutability": "MUTABLE",
+          "imageScanningConfiguration": {
+              "scanOnPush": false
+          },
+          "encryptionConfiguration": {
+              "encryptionType": "AES256"
+          }
+      }
+    }
+
+We can take the `repositoryUri` above, and upload to it. 
+First, we need to build the image - tagging it with the repository URI.
+
+    docker build . -t 758924794885.dkr.ecr.eu-west-1.amazonaws.com/example-repository
+
+Now, to upload the image we must authorise our Docker client to push to our ECR service (substitute your region below, and your account id instead of `758924794885`).
+
+    aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin 758924794885.dkr.ecr.eu-west-1.amazonaws.com
+
+If that succeeds, we can push our built image:
+
+    docker push 758924794885.dkr.ecr.eu-west-1.amazonaws.com/example-repository
+
+Now, assuming we have a Lambda called `Example_Lambda` already (with the appropriate role permissions), we can convert it to use our image:
+Now, we can create a lambda from our image:
+
+    aws lambda create-function --function-name Example_Lambda --role arn:aws:iam::758924794885:role/example_role --package-type Image --code ImageUri=758924794885.dkr.ecr.eu-west-1.amazonaws.com/example-repository:latest
+
+:::question Huh? Where did that `arn:aws:iam::758924794885:role/example_role` role come from?
+Ok, I got lazy and skipped documenting this step. 😅
+You will need to create a role with appropriate permissions (usually the fewest possible) for any Lambda you make.
+:::
+
+In future, we can update our Lambda to grab the latest pushed version of the image by running:
+
+    aws lambda update-function-code --function-name Example_Lambda --image-uri 758924794885.dkr.ecr.eu-west-1.amazonaws.com/example_repository:latest
+
+
+
+[^1]: Specifically layers only allow files to written to a [handful of paths](https://docs.aws.amazon.com/lambda/latest/dg/configuration-layers.html#configuration-layers-path) on a preset environment, and custom runtimes only allow changes to one file - the Lambda's "bootstrap" script.
+
+[^2]: Since code re-use and composition are possible in Docker by using [base images](https://docs.docker.com/engine/reference/builder/#from) and [multi-stage builds](https://docs.docker.com/develop/develop-images/multistage-build/), respectively.
