@@ -1,0 +1,226 @@
+---
+slug: lambda-bash-runtime
+title: AWS Lambda with custom bash runtime
+author: David Wood
+author_title: Ex-Infant, Planet Earth
+author_image_url: https://www.dropbox.com/s/s7cjocf1dq712qm/Screenshot%202021-03-23%20at%2008.43.40.png?dl=1
+---
+
+:::note
+Check out [this previous post](/lambda-docker) for instructions on how to deploy this custom runtime in a Docker image.
+:::
+
+AWS Lambda functions execute in the context of a [ "runtime" ](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-concepts.html#gettingstarted-concepts-runtime), consisting of the libraries necessary to run the Lambda's function code, plus some extra instructions for how to receive and respond to events from the [Lambda runtime API](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html).
+
+## Writing a custom runtime
+
+As used in the previous post, we have an example use-case of needing to create IVS Channels via a Lambda.
+A simple way to create channels is to use the AWS CLI, and this is easiest via a shell[^1]
+Since our 
+
+### 1. Bootstrap script
+
+First, let's create the bootstrap script:
+
+    touch bootstrap
+
+We will also need it to be executable when AWS Lambda runs it:
+
+    chmod +x bootstrap
+
+Now, how do implement a custom runtime in this bootstrap script?
+The only essential tasks for it are:
+
+1. Receive invocation events from the [Lambda Runtime API](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html)
+2. Call a handler, generating a response
+3. Sending the response back (to the Lambda Runtime API)
+
+
+Instead of writing the script step-by-step[^2], we will start with a finished script and work backwards.
+
+#### Finished `bootstrap` script
+
+```bash title="bootstrap"
+#!/bin/bash
+
+# set -euo pipefail
+
+AWS_LAMBDA_RUNTIME_URL="http://$AWS_LAMBDA_RUNTIME_API/2018-06-01/runtime"
+
+function post_lambda_handler_error {
+  ERROR=${1:-"Unknown Error"}
+  ERROR_TYPE=${2:-"Unknown"}
+
+  ERROR_OBJECT="{\"errorMessage\" : \"$ERROR\", \"errorType\" : \"$ERROR_TYPE\"}"
+
+  curl -X POST "$AWS_LAMBDA_RUNTIME_URL/invocation/$REQUEST_ID/error" -d "$ERROR_OBJECT" \
+    --header "Lambda-Runtime-Function-Error-Type: Unhandled"
+}
+
+function post_lambda_response {
+  curl -X POST "$AWS_LAMBDA_RUNTIME_URL/invocation/$REQUEST_ID/response" -d "$RESPONSE"
+}
+
+# Initialization - load function handler
+source $LAMBDA_TASK_ROOT/"create-channel.sh"
+
+# Processing
+while true
+do
+  HEADERS="$(mktemp)"
+  # Get an event. The HTTP request will block until one is received
+  EVENT_DATA=$(curl -sS -LD "$HEADERS" -X GET "$AWS_LAMBDA_RUNTIME_URL/invocation/next")
+
+  # Extract request ID by scraping response headers received above
+  REQUEST_ID=$(grep -Fi Lambda-Runtime-Aws-Request-Id "$HEADERS" | tr -d '[:space:]' | cut -d: -f2)
+
+  HANDLER=${HANDLER:handler}
+
+  RESPONSE=$($HANDLER 2> /tmp/err)
+  
+  ERROR=$(cat /tmp/err)
+
+  if [ -z "$ERROR" ]
+  then
+    post_lambda_response "$RESPONSE"
+  else
+    post_lambda_handler_error "$ERROR"
+  fi
+
+done
+
+```
+
+#### Explanation
+Ok, so how does that work?
+Let's go over it in chunks.
+
+```bash title="bootstrap"
+#!/bin/bash
+```
+
+This is just a [ shebang ](https://en.wikipedia.org/wiki/Shebang_(Unix)) that makes sure the Lambda executes this file as a bash script.
+
+```bash title="bootstrap"
+AWS_LAMBDA_RUNTIME_URL="http://$AWS_LAMBDA_RUNTIME_API/2018-06-01/runtime"
+```
+
+This defines a variable to make later calls to the Lambda Runtime API more convenient.
+It uses an environment variable that the Lambda service uses to pass in the URL of the Runtime API for this invocation - `AWS_LAMBDA_RUNTIME_API`.[^3]
+
+
+```bash title="bootstrap"
+function post_lambda_handler_error {
+  ERROR=${1:-"Unknown Error"}
+  ERROR_TYPE=${2:-"Unknown"}
+
+  ERROR_OBJECT="{\"errorMessage\" : \"$ERROR\", \"errorType\" : \"$ERROR_TYPE\"}"
+
+  curl -X POST "$AWS_LAMBDA_RUNTIME_URL/invocation/$REQUEST_ID/error" -d "$ERROR_OBJECT" \
+    --header "Lambda-Runtime-Function-Error-Type: Unhandled"
+}
+```
+
+This function wraps the Runtime API call to report an **error** with the invocation.
+It does this by posting an error object to the Runtime API's [`error`](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-invokeerror) endpoint.
+
+We will use this function later to catch errors in the handler script.
+
+```bash title="bootstrap"
+function post_lambda_response {
+  curl -X POST "$AWS_LAMBDA_RUNTIME_URL/invocation/$REQUEST_ID/response" -d "$RESPONSE"
+}
+```
+This function wraps another Runtime API call - this time to **respond successfully** using the [`response`](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-response) endpoint.
+
+We will use this function later to pass the results of the handler function to the Lambda caller.
+
+```bash title="bootstrap"
+source $LAMBDA_TASK_ROOT/"create-channel.sh"
+```
+
+This loads the contents of external bash script - our handler script, in this case.
+It uses another Lambda-defined environment variable [`LAMBDA_TASK_ROOT`](https://docs.aws.amazon.com/lambda/latest/dg/configuration-envvars.html#configuration-envvars-runtime), which represents the working directory that Lambdas execute from (as a matter of convention, we have copied our code there in the [Docker build step](/blog/lambda-docker/#example-use-case-lambda-using-the-aws-cli)).
+
+
+```bash title="bootstrap"
+while true
+do
+
+# ...
+
+done 
+```
+This loop allows repeated calls to the Runtime API endpoint for receiving invocation events - [`/invocation/next`](https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html#runtimes-api-next).
+
+:::question Huh? Lambdas invoke using a pull-model? Isn't this really inefficient?
+I don't know...
+It certainly seems a little odd, and I'm not sure what this implies.
+Is this custom runtime script ran indefinitely to monitor events?
+:::
+
+:::todo
+Find out when this bootstrap script is run, and whether it really is ran in a perpetual loop.
+:::
+
+```bash title="bootstrap"
+  HEADERS="$(mktemp)"
+  # Get an event. The HTTP request will block until one is received
+  EVENT_DATA=$(curl -sS -LD "$HEADERS" -X GET "$AWS_LAMBDA_RUNTIME_URL/invocation/next")
+```
+
+This calls the previously mention `/next` endpoint to poll for invocation events, after creating a temp file with `mktemp` to store the response headers (they will be useful in the next part).
+
+The `-sS` option makes curl log errors only (not its progress).
+The `-L` option makes curl redirect automatically in response to a `3XX` status code (not sure why this is necessary).
+The `-D` option makes curl store the headers in the temp file that was created with `mktemp`.
+
+:::todo 
+See if any of the above `curl` options can be removed.
+:::
+
+```bash title="bootstrap"
+REQUEST_ID=$(grep -Fi Lambda-Runtime-Aws-Request-Id "$HEADERS" | tr -d '[:space:]' | cut -d: -f2)
+```
+This searches the temp file we stored the response headers in the last step (whose filename is stored in the variable `HEADERS`).
+It then extracts the value of one header in particular `Lambda-Runtime-Aws-Request-Id`, and stores it in the variable `REQUEST_ID`.
+This variable is used to construct the URL of our response and error calls, as we saw defined earlier.
+
+```bash title="bootstrap"
+  HANDLER=${HANDLER:handler}
+
+  RESPONSE=$($HANDLER 2> /tmp/err)
+```
+
+This checks the environment variable `HANDLER` (which may be defined by the Lambda's configuration), using "handler" as a default (which matches the function name we will define in our handler script).
+
+It then actually calls the handler function, [redirecting any errors](https://tldp.org/LDP/abs/html/io-redirection.html) to a temp file `tmp/err`.
+
+```bash title="bootstrap"
+  ERROR=$(cat /tmp/err)
+
+  if [ -z "$ERROR" ]
+  then
+    post_lambda_response "$RESPONSE"
+  else
+    post_lambda_handler_error "$ERROR"
+  fi
+```
+
+This reads the error file from the previous step, and posts the response if there were no errors (the temp file is empty), or the contents of the file if not.
+
+
+### 2. Handler
+
+This part is simple - we only need to call the AWS CLI, via a function that bootstrap expects to be called `handler` (though we could have named it anything).
+
+```bash title="handler.sh"
+function handler {
+    aws ivs create-channel
+}
+```
+
+
+[^1]: We could have spawned a subprocess in Node or Python for this, but I thought it was the simplest solution to run the CLI in the Lambda in exactly the way we run it locally - just entering commands straight into a shell.
+[^2]: I am too lazy for this
+[^3]: The implication is that this URL changes between invocations, but I did not confirm this.
